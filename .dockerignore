@@ -3,3 +3,10 @@ npm-debug.log
 .git
 .gitignore
 .env
+.env.example
+logs
+*.log
+.github
+nginx
+README.md
+server/logs

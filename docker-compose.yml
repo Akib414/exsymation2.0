@@ -1,0 +1,43 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - 3000
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Certs on the host (certbot). Remove :ro test lines if unused.
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
