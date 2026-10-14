@@ -38,10 +38,17 @@ services:
     # nginx master starts as root and chowns cache dirs to uid 101.
     cap_add:
       - CHOWN
+      - SETUID
+      - SETGID
     tmpfs:
       - /var/cache/nginx
       - /var/run
       - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
     deploy:
       resources:
         limits:
@@ -75,6 +82,8 @@ services:
     # Same as client: nginx needs CHOWN for its cache dirs under read-only rootfs.
     cap_add:
       - CHOWN
+      - SETUID
+      - SETGID
     tmpfs:
       - /var/cache/nginx
       - /var/run
