@@ -74,9 +74,15 @@ jobs:
 
       - name: Generate test secrets
         run: |
-          echo "JWT_SECRET=$(openssl rand -hex 64)" >> $GITHUB_ENV
-          echo "JWT_ADMIN_SECRET=$(openssl rand -hex 64)" >> $GITHUB_ENV
-          echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> $GITHUB_ENV
+          JWT_SECRET=$(openssl rand -hex 64)
+          JWT_ADMIN_SECRET=$(openssl rand -hex 64)
+          ENCRYPTION_KEY=$(openssl rand -hex 32)
+          echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$JWT_ADMIN_SECRET"
+          echo "::add-mask::$ENCRYPTION_KEY"
+          echo "JWT_SECRET=$JWT_SECRET" >> $GITHUB_ENV
+          echo "JWT_ADMIN_SECRET=$JWT_ADMIN_SECRET" >> $GITHUB_ENV
+          echo "ENCRYPTION_KEY=$ENCRYPTION_KEY" >> $GITHUB_ENV
 
       - name: Run Docker container
         run: docker run -d --network host --read-only --cap-drop ALL --restart unless-stopped --mount type=tmpfs,destination=/app/logs --memory=512m --cpus=1 --env MONGO_URI=mongodb://localhost:27017/exsymation-ci --env JWT_SECRET --env JWT_ADMIN_SECRET --env ENCRYPTION_KEY --name exsymation-container exsymation-server
@@ -109,7 +115,14 @@ jobs:
         run: docker ps --filter name=exsymation-client; docker logs exsymation-client || true
 
       - name: Test deployed client
-        run: curl --retry 5 --retry-delay 3 http://localhost:8080 | grep -i "exsymation\|sign in\|root"
+        run: |
+          curl --retry 5 --retry-delay 3 http://localhost:8080 | grep -i "exsymation\|sign in\|root" || {
+            echo "--- docker ps ---"
+            docker ps -a --filter name=exsymation-client
+            echo "--- docker logs ---"
+            docker logs exsymation-client || true
+            exit 1
+          }
 
       - name: Stop Docker containers
         if: always()
