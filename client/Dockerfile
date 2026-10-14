@@ -17,7 +17,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 # Stage 2: lean static server — dist + SPA fallback only, non-root.
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.29-alpine AS runner
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

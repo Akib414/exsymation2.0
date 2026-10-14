@@ -51,7 +51,7 @@ services:
       start_period: 10s
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.29-alpine
     restart: unless-stopped
     depends_on:
       app:
