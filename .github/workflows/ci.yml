@@ -109,4 +109,4 @@ jobs:
 
       - name: Stop Docker containers
         if: always()
-        run: docker stop exsymation-container exsymation-client
+        run: docker rm -f exsymation-container exsymation-client || true
