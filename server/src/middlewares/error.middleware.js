@@ -19,13 +19,23 @@ function errorHandler(err, req, res, next) {
     ip: req.ip,
   });
 
-  if (process.env.NODE_ENV === "production") {
-    return res.status(status).json({
-      error: status === 500 ? "Internal server error" : err.message,
-    });
+  if (err.code === 11000) {
+    return res.status(409).json({ error: "Duplicate key" });
   }
 
-  return res.status(status).json({ error: err.message, stack: err.stack });
+  // Zod validation failures carry field details — safe to expose (format only).
+  if (err.status === 400 && err.details) {
+    return res.status(400).json({ error: err.message, details: err.details });
+  }
+
+  // Stacks only in development — never in production or test.
+  if (process.env.NODE_ENV === "development") {
+    return res.status(status).json({ error: err.message, stack: err.stack });
+  }
+
+  return res.status(status).json({
+    error: status === 500 ? "Internal server error" : err.message,
+  });
 }
 
 export { notFound, errorHandler };
