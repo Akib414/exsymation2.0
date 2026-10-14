@@ -35,6 +35,9 @@ services:
     read_only: true
     cap_drop:
       - ALL
+    # nginx master starts as root and chowns cache dirs to uid 101.
+    cap_add:
+      - CHOWN
     tmpfs:
       - /var/cache/nginx
       - /var/run
@@ -69,6 +72,9 @@ services:
     read_only: true
     cap_drop:
       - ALL
+    # Same as client: nginx needs CHOWN for its cache dirs under read-only rootfs.
+    cap_add:
+      - CHOWN
     tmpfs:
       - /var/cache/nginx
       - /var/run
