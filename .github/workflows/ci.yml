@@ -105,7 +105,7 @@ jobs:
           exit-code: "1"
 
       - name: Run client container
-        run: docker run -d -p 8080:80 --read-only --cap-drop ALL --restart unless-stopped --tmpfs /tmp --memory=256m --cpus=0.5 --name exsymation-client exsymation-client
+        run: docker run -d -p 8080:80 --read-only --cap-drop ALL --restart unless-stopped --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp --memory=256m --cpus=0.5 --name exsymation-client exsymation-client
 
       - name: Wait for client to start
         run: sleep 5
