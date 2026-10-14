@@ -38,6 +38,7 @@ services:
     tmpfs:
       - /var/cache/nginx
       - /var/run
+      - /tmp
     deploy:
       resources:
         limits:

@@ -99,10 +99,14 @@ jobs:
           exit-code: "1"
 
       - name: Run client container
-        run: docker run -d -p 8080:80 --read-only --cap-drop ALL --restart unless-stopped --memory=256m --cpus=0.5 --name exsymation-client exsymation-client
+        run: docker run -d -p 8080:80 --read-only --cap-drop ALL --restart unless-stopped --tmpfs /tmp --memory=256m --cpus=0.5 --name exsymation-client exsymation-client
 
       - name: Wait for client to start
         run: sleep 5
+
+      - name: Inspect client container
+        if: always()
+        run: docker ps --filter name=exsymation-client; docker logs exsymation-client || true
 
       - name: Test deployed client
         run: curl --retry 5 --retry-delay 3 http://localhost:8080 | grep -i "exsymation\|sign in\|root"
