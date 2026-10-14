@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 server/node_modules/
+client/node_modules/
 
 .env
 .env.local
@@ -20,6 +21,10 @@ yarn-error.log*
 
 # Testing & Coverage
 coverage/
+
+# Build output (rebuilt in CI/Docker — never commit)
+client/dist/
+client/.vite/
 
 # OS / Editor Files
 .DS_Store

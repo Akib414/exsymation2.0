@@ -22,11 +22,41 @@ services:
       retries: 3
       start_period: 10s
 
+  client:
+    build:
+      context: ./client
+      # Same-origin API: keep empty so the browser calls /api on this host,
+      # which nginx proxies to app. Set to the API origin only if split-hosted.
+      args:
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    expose:
+      - 80
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
       app:
+        condition: service_healthy
+      client:
         condition: service_healthy
     ports:
       - "80:80"
