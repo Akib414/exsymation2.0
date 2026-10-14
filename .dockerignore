@@ -10,3 +10,5 @@ logs
 nginx
 README.md
 server/logs
+client/node_modules
+client/dist

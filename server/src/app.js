@@ -10,6 +10,8 @@ import logger from "./utils/logger.js";
 import { limiter } from "./middlewares/rateLimiter.middleware.js";
 import { notFound, errorHandler } from "./middlewares/error.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
+import meRoutes from "./routes/me.routes.js";
 import teacherRoutes from "./routes/teacher.routes.js";
 import examRoutes from "./routes/exam.routes.js";
 import committeeRoutes from "./routes/committee.routes.js";
@@ -20,12 +22,14 @@ import notificationRoutes from "./routes/notification.routes.js";
 
 const app = express();
 
-// Behind nginx/Docker — needed for correct req.ip (rate limiter) and secure cookies.
-app.set("trust proxy", 1);
+// Trust proxy hops via env (rate limiter + secure cookies behind nginx).
+// Set TRUST_PROXY=1 in Docker/nginx, higher if behind extra LB.
+app.set("trust proxy", Number(process.env.TRUST_PROXY || 1));
 
 app.use(helmet());
-// Permissive until frontend URL is known — then restrict via FRONTEND_URL.
-app.use(cors());
+// CORS with credentials so the login page can use httpOnly refresh cookies.
+// Set FRONTEND_URL in production; falls back to reflecting the origin in dev.
+app.use(cors({ origin: process.env.FRONTEND_URL || true, credentials: true }));
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 app.use(mongoSanitize);
@@ -40,6 +44,8 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/me", meRoutes);
 app.use("/api/teachers", teacherRoutes);
 app.use("/api/exams", examRoutes);
 app.use("/api/committees", committeeRoutes);
