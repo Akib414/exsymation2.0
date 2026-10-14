@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     services:
       mongodb:
@@ -91,7 +92,7 @@ jobs:
         run: sleep 10
 
       - name: Test deployed application
-        run: curl --retry 5 --retry-delay 5 http://localhost:3000
+        run: curl --max-time 30 --retry 5 --retry-delay 5 http://localhost:3000
 
       - name: Build client Docker image
         run: docker build -t exsymation-client ./client
@@ -115,8 +116,9 @@ jobs:
         run: docker ps --filter name=exsymation-client; docker logs exsymation-client || true
 
       - name: Test deployed client
+        timeout-minutes: 3
         run: |
-          curl --retry 5 --retry-delay 3 http://localhost:8080 | grep -i "exsymation\|sign in\|root" || {
+          curl --max-time 30 --retry 5 --retry-delay 3 http://localhost:8080 | grep -i "exsymation\|sign in\|root" || {
             echo "--- docker ps ---"
             docker ps -a --filter name=exsymation-client
             echo "--- docker logs ---"
