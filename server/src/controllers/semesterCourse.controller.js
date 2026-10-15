@@ -29,6 +29,19 @@ async function addCourseToSemester(req, res, next) {
       return next(err);
     }
 
+    // One course lives in exactly one semester — refuse if attached elsewhere.
+    const clash = await SemesterCourse.findOne({
+      semester: { $ne: semester },
+      course_list: course._id,
+    })
+      .select("semester")
+      .lean();
+    if (clash) {
+      const err = new Error(`Course is already in semester ${clash.semester}`);
+      err.status = 409;
+      return next(err);
+    }
+
     const doc = await SemesterCourse.findOneAndUpdate(
       { semester },
       { $addToSet: { course_list: course._id } },

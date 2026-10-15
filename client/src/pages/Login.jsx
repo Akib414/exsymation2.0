@@ -117,6 +117,12 @@ export default function Login() {
           </button>
         </form>
 
+        <p className="mt-4 text-center text-sm text-[#b9b9c2]">
+          <Link className="underline text-[#f2f2f4]" to="/admin/login">
+            Login as admin
+          </Link>
+        </p>
+
         <p className="mt-[26px] text-center text-[13px] leading-relaxed text-[#b9b9c2]">
           Department of Computer Science and Engineering
           <br />

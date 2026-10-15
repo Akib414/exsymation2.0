@@ -175,4 +175,29 @@ async function changeChairman(req, res, next) {
   }
 }
 
-export { createCommittee, listCommittees, changeChairman };
+// GET /api/admin/chairmen/current — admin only. Read-only: who is active now.
+async function getCurrentChairman(req, res, next) {
+  try {
+    const current = await DepartmentChairman.findOne({ status: "active" })
+      .populate("teacher", "name email phone status")
+      .lean();
+    if (!current || !current.teacher) return res.json({ data: null });
+    return res.json({
+      data: {
+        id: String(current._id),
+        teacher: {
+          id: String(current.teacher._id),
+          name: current.teacher.name,
+          email: current.teacher.email,
+          phone: current.teacher.phone,
+          status: current.teacher.status,
+        },
+        startDate: current.startDate,
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export { createCommittee, listCommittees, changeChairman, getCurrentChairman };

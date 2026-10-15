@@ -14,7 +14,7 @@ import {
   getSemesterCourses,
 } from "../controllers/semesterCourse.controller.js";
 import { createBatch, listBatches, updateBatch } from "../controllers/session.controller.js";
-import { changeChairman } from "../controllers/committee.controller.js";
+import { changeChairman, getCurrentChairman } from "../controllers/committee.controller.js";
 import { protectAdmin } from "../middlewares/auth.middleware.js";
 import { csrfCheck } from "../middlewares/csrf.middleware.js";
 import { loginLimiter, refreshLimiter } from "../middlewares/rateLimiter.middleware.js";
@@ -66,6 +66,7 @@ router.get("/batches", protectAdmin, listBatches);
 router.patch("/batches/:id", protectAdmin, validate(sessionUpdateSchema), updateBatch);
 
 // Chairman handover: current -> inactive, new teacher from Teacher table -> active.
+router.get("/chairmen/current", protectAdmin, getCurrentChairman);
 router.post("/chairmen/change", protectAdmin, validate(chairmanChangeSchema), changeChairman);
 
 export default router;
