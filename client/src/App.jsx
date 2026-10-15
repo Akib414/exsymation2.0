@@ -1,8 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./auth/AuthContext.jsx";
+import { AdminAuthProvider, useAdminAuth } from "./auth/AdminAuthContext.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import AdminProtectedRoute from "./components/AdminProtectedRoute.jsx";
 import Login from "./pages/Login.jsx";
+import AdminLogin from "./pages/AdminLogin.jsx";
+import AdminDashboard from "./pages/AdminDashboard.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import ChangePassword from "./pages/ChangePassword.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
@@ -22,10 +26,26 @@ function PublicOnly({ children }) {
   return children;
 }
 
+function AdminPublicOnly({ children }) {
+  const { isAdminAuthenticated, restoring } = useAdminAuth();
+  if (restoring) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#232329] p-6 text-[#f2f2f4]">
+        <p className="text-[15px] text-[#b9b9c2]">Loading…</p>
+      </main>
+    );
+  }
+  if (isAdminAuthenticated) {
+    return <Navigate to="/admin" replace />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <AdminAuthProvider>
+        <Routes>
         <Route
           path="/login"
           element={
@@ -52,8 +72,25 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/login"
+          element={
+            <AdminPublicOnly>
+              <AdminLogin />
+            </AdminPublicOnly>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AdminProtectedRoute>
+              <AdminDashboard />
+            </AdminProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </AdminAuthProvider>
     </AuthProvider>
   );
 }

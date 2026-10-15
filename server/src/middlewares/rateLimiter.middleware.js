@@ -1,9 +1,9 @@
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 
-// Global: 100 reqs / 15 min per IP across all routes.
+// Global: 1000 reqs / 15 min per IP across all routes (relaxed for now).
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, try again later." },
