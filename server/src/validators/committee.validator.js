@@ -35,4 +35,11 @@ const teacherCreateSchema = z.object({
   tempPassword: z.string().min(8).max(72),
 });
 
-export { committeeCreateSchema, chairmanChangeSchema, teacherCreateSchema };
+const teachersBulkSchema = z.object({
+  teachers: z.array(teacherCreateSchema).min(1).max(100),
+});
+
+// Single object OR { teachers: [...] } — supports one or many in one route.
+const teachersCreateUnion = z.union([teacherCreateSchema, teachersBulkSchema]);
+
+export { committeeCreateSchema, chairmanChangeSchema, teacherCreateSchema, teachersBulkSchema, teachersCreateUnion };
