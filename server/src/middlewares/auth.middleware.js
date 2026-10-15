@@ -86,34 +86,6 @@ async function requirePasswordChanged(req, res, next) {
   }
 }
 
-function requireRole(role) {
-  return (req, res, next) => {
-    if (!req.user || !Array.isArray(req.user.roles) || !req.user.roles.includes(role)) {
-      const err = new Error("Forbidden");
-      err.status = 403;
-      return next(err);
-    }
-    return next();
-  };
-}
-
-function requireAnyRole(...roles) {
-  return (req, res, next) => {
-    if (!req.user || !Array.isArray(req.user.roles)) {
-      const err = new Error("Forbidden");
-      err.status = 403;
-      return next(err);
-    }
-    const ok = roles.some((r) => req.user.roles.includes(r));
-    if (!ok) {
-      const err = new Error("Forbidden");
-      err.status = 403;
-      return next(err);
-    }
-    return next();
-  };
-}
-
 // Token roles can be up to 15 min stale — re-check DB for sensitive actions.
 // Checks BOTH the chairman row AND the teacher's own status.
 function requireChairmanStrict(req, res, next) {
@@ -143,7 +115,5 @@ export {
   protectTeacher,
   protectAdmin,
   requirePasswordChanged,
-  requireRole,
-  requireAnyRole,
   requireChairmanStrict,
 };

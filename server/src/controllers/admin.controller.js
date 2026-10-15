@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import Admin from "../models/admin.model.js";
 import RefreshToken from "../models/refreshToken.model.js";
 import { signAdminAccess } from "../utils/jwt.js";
-import { comparePassword } from "../utils/password.util.js";
+import { comparePassword, hashPassword } from "../utils/password.util.js";
 import { newRefreshToken, sha256 } from "../utils/tokens.js";
 import { adminRefreshCookieOptions, clearAdminRefreshCookie } from "../utils/cookies.js";
 import { writeAudit } from "../utils/audit.js";
@@ -158,4 +158,38 @@ async function logoutAll(req, res, next) {
   }
 }
 
-export { login, refresh, logout, logoutAll };
+async function changePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const admin = await Admin.findById(req.user.sub).select(
+      "+passwordHash isActive failedAttempts lockUntil"
+    );
+    if (!admin || !admin.isActive) return next(invalid());
+
+    const ok = await comparePassword(currentPassword, admin.passwordHash);
+    if (!ok) return next(invalid());
+
+    admin.passwordHash = await hashPassword(newPassword);
+    admin.failedAttempts = 0;
+    admin.lockUntil = null;
+    await admin.save();
+
+    await RefreshToken.updateMany(
+      { actor: admin._id, actorType: "admin", revoked: false },
+      { $set: { revoked: true, revokedAt: new Date() } }
+    );
+    clearAdminRefreshCookie(res);
+    await writeAudit({
+      actor: admin._id,
+      actorType: "admin",
+      action: "password.change",
+      entity: "Admin",
+      entityId: admin._id,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export { login, refresh, logout, logoutAll, changePassword };

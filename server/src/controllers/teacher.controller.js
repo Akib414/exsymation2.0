@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import mongoose from "mongoose";
 
 import Teacher from "../models/teacher.model.js";
@@ -9,63 +8,99 @@ import { encrypt } from "../utils/crypto.util.js";
 import { writeAudit } from "../utils/audit.js";
 import { cleanObject } from "../utils/sanitize.js";
 
-// POST /api/teachers — chairman only. Creates teacher with temp password.
+// POST /api/admin/teachers — admin only. Single object OR { teachers: [...] }.
 async function createTeacher(req, res, next) {
   try {
-    const cleaned = cleanObject(req.body);
-    const { name, email, phone, nid, photo, tempPassword } = cleaned;
+    const items = Array.isArray(req.body.teachers)
+      ? req.body.teachers
+      : [req.body];
+    const cleanedItems = items.map((t) => cleanObject(t));
+    const isBulk = Array.isArray(req.body.teachers);
 
-    const exists = await Teacher.findOne({ email }).select("_id").lean();
-    if (exists) {
-      const err = new Error("Email already in use");
+    const emails = cleanedItems.map((t) => t.email);
+    if (new Set(emails).size !== emails.length) {
+      const err = new Error("Duplicate email in request");
       err.status = 409;
       return next(err);
     }
 
-    let encryptedNid = null;
-    if (nid) {
-      try {
-        encryptedNid = encrypt(String(nid));
-      } catch (e) {
-        e.status = 500;
-        return next(e);
-      }
+    const existing = await Teacher.find({ email: { $in: emails } })
+      .select("email")
+      .lean();
+    if (existing.length > 0) {
+      const err = new Error(
+        `Email already in use: ${existing.map((e) => e.email).join(", ")}`
+      );
+      err.status = 409;
+      return next(err);
     }
 
-    const teacher = await Teacher.create({
-      name,
-      email,
-      phone,
-      nid: encryptedNid,
-      photo,
-      passwordHash: await hashPassword(tempPassword),
-      status: "active",
-      mustChangePassword: true,
-      failedAttempts: 0,
-      lockUntil: null,
-    });
+    const docsToInsert = [];
+    for (const item of cleanedItems) {
+      let encryptedNid = null;
+      if (item.nid) {
+        try {
+          encryptedNid = encrypt(String(item.nid));
+        } catch (e) {
+          e.status = 500;
+          return next(e);
+        }
+      }
+      docsToInsert.push({
+        name: item.name,
+        email: item.email,
+        phone: item.phone,
+        nid: encryptedNid,
+        photo: item.photo,
+        passwordHash: await hashPassword(item.tempPassword),
+        status: "active",
+        mustChangePassword: true,
+        failedAttempts: 0,
+        lockUntil: null,
+      });
+    }
+
+    const docs = await Teacher.insertMany(docsToInsert, { ordered: true });
 
     await writeAudit({
       actor: new mongoose.Types.ObjectId(req.user.sub),
-      actorType: req.user.type === "admin" ? "admin" : "teacher",
-      action: "teacher.create",
+      actorType: "admin",
+      action: isBulk ? "teacher.bulk-create" : "teacher.create",
       entity: "Teacher",
-      entityId: teacher._id,
-      meta: { email },
+      ...(isBulk
+        ? { meta: { count: docs.length, emails } }
+        : { entityId: docs[0]._id, meta: { email: emails[0] } }),
     });
 
+    if (!isBulk) {
+      const teacher = docs[0];
+      return res.status(201).json({
+        id: String(teacher._id),
+        name: teacher.name,
+        email: teacher.email,
+        mustChangePassword: true,
+      });
+    }
+
     return res.status(201).json({
-      id: String(teacher._id),
-      name: teacher.name,
-      email: teacher.email,
-      mustChangePassword: true,
+      count: docs.length,
+      teachers: docs.map((t) => ({
+        id: String(t._id),
+        name: t.name,
+        email: t.email,
+        mustChangePassword: true,
+      })),
     });
   } catch (err) {
+    if (err.code === 11000) {
+      err.status = 409;
+      err.message = "Duplicate email";
+    }
     return next(err);
   }
 }
 
-// PATCH /api/teachers/:id/deactivate — chairman only. Never hard-delete.
+// PATCH /api/admin/teachers/:id/deactivate — admin only. Never hard-delete.
 // Refuses the active chairman: handover first. Revokes all sessions.
 async function deactivateTeacher(req, res, next) {
   try {
@@ -111,7 +146,7 @@ async function deactivateTeacher(req, res, next) {
   }
 }
 
-// PATCH /api/teachers/:id/reactivate — chairman only.
+// PATCH /api/admin/teachers/:id/reactivate — admin only.
 async function reactivateTeacher(req, res, next) {
   try {
     const { id } = req.params;
@@ -144,52 +179,28 @@ async function reactivateTeacher(req, res, next) {
   }
 }
 
-// POST /api/teachers/:id/reset-password — chairman only.
-// Issues a random temp password, forces change, revokes all sessions.
-async function resetTeacherPassword(req, res, next) {
+// GET /api/admin/teachers — admin only. Needed to get ids for deactivate/chairman.
+async function listTeachers(req, res, next) {
   try {
-    const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) {
-      const err = new Error("Invalid id");
-      err.status = 400;
-      return next(err);
+    const filter = {};
+    if (req.query.status === "active" || req.query.status === "inactive") {
+      filter.status = req.query.status;
     }
-    const teacher = await Teacher.findById(id).select("+passwordHash status");
-    if (!teacher) {
-      const err = new Error("Not found");
-      err.status = 404;
-      return next(err);
-    }
-    if (teacher.status !== "active") {
-      const err = new Error("Teacher is not active");
-      err.status = 400;
-      return next(err);
-    }
-    const tempPassword = crypto.randomBytes(12).toString("hex");
-    teacher.passwordHash = await hashPassword(tempPassword);
-    teacher.mustChangePassword = true;
-    teacher.failedAttempts = 0;
-    teacher.lockUntil = null;
-    await teacher.save();
-
-    await RefreshToken.updateMany(
-      { actor: teacher._id, actorType: "teacher", revoked: false },
-      { $set: { revoked: true, revokedAt: new Date() } }
-    );
-
-    await writeAudit({
-      actor: new mongoose.Types.ObjectId(req.user.sub),
-      actorType: req.user.type === "admin" ? "admin" : "teacher",
-      action: "teacher.reset-password",
-      entity: "Teacher",
-      entityId: teacher._id,
+    const docs = await Teacher.find(filter).sort({ name: 1 }).select("name email phone status mustChangePassword").lean();
+    return res.json({
+      count: docs.length,
+      teachers: docs.map((t) => ({
+        id: String(t._id),
+        name: t.name,
+        email: t.email,
+        phone: t.phone,
+        status: t.status,
+        mustChangePassword: t.mustChangePassword,
+      })),
     });
-    // Temp password leaves the server only here. No-store, never logged/audited.
-    res.set("Cache-Control", "no-store");
-    return res.json({ ok: true, tempPassword });
   } catch (err) {
     return next(err);
   }
 }
 
-export { createTeacher, deactivateTeacher, reactivateTeacher, resetTeacherPassword };
+export { createTeacher, deactivateTeacher, reactivateTeacher, listTeachers };
