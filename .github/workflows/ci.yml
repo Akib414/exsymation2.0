@@ -71,7 +71,8 @@ jobs:
           ssh-keyscan -H "$AZURE_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Update code and build image on Azure
+     
+      - name: Deploy backend to Azure
         env:
           AZURE_HOST: ${{ secrets.AZURE_HOST }}
           AZURE_USER: ${{ secrets.AZURE_USER }}
@@ -82,7 +83,9 @@ jobs:
              cd /home/dans/exsymation/exsymation2.0
              git fetch origin release
              git reset --hard origin/release
-             docker build -t exsymation-server .'
+             docker compose up -d --build app
+             docker compose ps'
+
 
       - name: Clean up SSH key
         if: always()
