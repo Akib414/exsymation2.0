@@ -82,7 +82,7 @@ jobs:
              cd /home/dans/exsymation/exsymation2.0
              git fetch origin release
              git reset --hard origin/release
-             sudo docker build -t exsymation-server .'
+             docker build -t exsymation-server .'
 
       - name: Clean up SSH key
         if: always()
