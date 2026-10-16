@@ -1,3 +1,4 @@
+
 name: CI/CD Pipeline
 
 on:
@@ -49,15 +50,40 @@ jobs:
           severity: HIGH
           exit-code: "0"
 
-      - name: Run Docker container
-        run: docker run -d -p 3000:3000 --read-only --cap-drop ALL --restart unless-stopped --mount type=tmpfs,destination=/app/logs --memory=512m --cpus=1 --name exsymation-container exsymation-server
+  deploy:
+    name: Deploy code and image to Azure
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release'
+    runs-on: ubuntu-latest
 
-      - name: Wait for application to start
-        run: sleep 5
+    steps:
+      - name: Configure SSH
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+          AZURE_SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AZURE_SSH_PRIVATE_KEY" > ~/.ssh/azure_deploy
+          chmod 600 ~/.ssh/azure_deploy
+          ssh-keyscan -H "$AZURE_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Test deployed application
-        run: curl http://localhost:3000
+      - name: Update code and build image on Azure
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+        run: |
+          ssh -i ~/.ssh/azure_deploy \
+            "$AZURE_USER@$AZURE_HOST" \
+            'set -eu
+             cd /home/dans/exsymation/exsymation2.0
+             git fetch origin release
+             git reset --hard origin/release
+             sudo docker build -t exsymation-server .'
 
-      - name: Stop Docker container
+      - name: Clean up SSH key
         if: always()
-        run: docker stop exsymation-container
+        run: rm -f ~/.ssh/azure_deploy
