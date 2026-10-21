@@ -24,6 +24,12 @@ const committeeCreateSchema = z.object({
 
 const committeeUpdateSchema = committeeCreateSchema
   .partial()
+  .extend({
+    // Explicit null clears an optional slot/external member on update.
+    tabulator1: objectId.nullable().optional(),
+    tabulator2: objectId.nullable().optional(),
+    external: externalSchema.nullable().optional(),
+  })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
   });

@@ -301,11 +301,13 @@ async function updateCommittee(req, res, next) {
       return next(err);
     }
 
+    const has = (key) => Object.prototype.hasOwnProperty.call(req.body, key);
+
     const chairman = req.body.chairman ?? doc.chairman;
     const member1 = req.body.member1 ?? doc.member1;
     const member2 = req.body.member2 ?? doc.member2;
-    const tabulator1 = req.body.tabulator1 ?? doc.tabulator1;
-    const tabulator2 = req.body.tabulator2 ?? doc.tabulator2;
+    const tabulator1 = has("tabulator1") ? req.body.tabulator1 : doc.tabulator1;
+    const tabulator2 = has("tabulator2") ? req.body.tabulator2 : doc.tabulator2;
     const session = req.body.session ?? doc.session;
     const semester = req.body.semester ?? doc.semester;
     const startDate = req.body.start ? new Date(req.body.start) : doc.start;
@@ -368,7 +370,7 @@ async function updateCommittee(req, res, next) {
     doc.start = startDate;
     doc.end = endDate;
     doc.status = status;
-    if (req.body.external !== undefined) doc.external = req.body.external;
+    if (has("external")) doc.external = req.body.external;
 
     await doc.save();
 
