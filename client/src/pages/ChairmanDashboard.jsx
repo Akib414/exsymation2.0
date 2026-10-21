@@ -4,17 +4,20 @@ import { useAuth } from "../auth/AuthContext.jsx";
 import OverviewPanel from "../components/chairman/OverviewPanel.jsx";
 import TeachersPanel from "../components/chairman/TeachersPanel.jsx";
 import BatchesPanel from "../components/chairman/BatchesPanel.jsx";
+import CommitteesPanel from "../components/chairman/CommitteesPanel.jsx";
 
 const NAV = [
   { key: "overview", label: "Overview" },
   { key: "teachers", label: "Teachers" },
   { key: "batches", label: "Batches" },
+  { key: "committees", label: "Exam committees" },
 ];
 
 const TITLES = {
   overview: "Chairman overview",
   teachers: "Teachers",
   batches: "Batches",
+  committees: "Exam committees",
 };
 
 export default function ChairmanDashboard() {
@@ -76,6 +79,8 @@ export default function ChairmanDashboard() {
               <TeachersPanel />
             ) : selected === "batches" ? (
               <BatchesPanel />
+            ) : selected === "committees" ? (
+              <CommitteesPanel />
             ) : (
               <OverviewPanel onNavigate={setSelected} />
             )}
