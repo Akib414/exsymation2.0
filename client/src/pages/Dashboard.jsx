@@ -60,6 +60,14 @@ export default function Dashboard() {
         </p>
 
         <div className="flex flex-col gap-3">
+          {roles.includes("chairman") && (
+            <Link
+              to="/chairman"
+              className="w-full rounded-xl bg-[#f2f2f4] p-[15px] text-center text-base font-semibold text-[#232329]"
+            >
+              Open chairman dashboard
+            </Link>
+          )}
           <Link
             to="/change-password"
             className="w-full rounded-xl border border-[#55555f] bg-transparent p-[15px] text-center text-base font-semibold text-[#f2f2f4]"
