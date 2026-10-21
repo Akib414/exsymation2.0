@@ -22,6 +22,12 @@ const committeeCreateSchema = z.object({
   status: z.enum(["active", "inactive"]).optional(),
 });
 
+const committeeUpdateSchema = committeeCreateSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
 const chairmanChangeSchema = z.object({
   newTeacherId: objectId,
 });
@@ -42,4 +48,11 @@ const teachersBulkSchema = z.object({
 // Single object OR { teachers: [...] } — supports one or many in one route.
 const teachersCreateUnion = z.union([teacherCreateSchema, teachersBulkSchema]);
 
-export { committeeCreateSchema, chairmanChangeSchema, teacherCreateSchema, teachersBulkSchema, teachersCreateUnion };
+export {
+  committeeCreateSchema,
+  committeeUpdateSchema,
+  chairmanChangeSchema,
+  teacherCreateSchema,
+  teachersBulkSchema,
+  teachersCreateUnion,
+};

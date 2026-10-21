@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import ExamCommittee from "../models/examCommittee.model.js";
 import Teacher from "../models/teacher.model.js";
+import Session from "../models/session.model.js";
 import DepartmentChairman from "../models/departmentChairman.model.js";
 import { writeAudit } from "../utils/audit.js";
 import { endOfDayInTZ, startOfDayInTZ } from "../utils/timezone.js";
@@ -43,6 +44,12 @@ async function createCommittee(req, res, next) {
     if (!mongoose.isValidObjectId(session)) {
       const err = new Error("Invalid session id");
       err.status = 400;
+      return next(err);
+    }
+    const sessionDoc = await Session.findById(session).select("_id").lean();
+    if (!sessionDoc) {
+      const err = new Error("Session not found");
+      err.status = 404;
       return next(err);
     }
 
@@ -124,7 +131,35 @@ async function listCommittees(req, res, next) {
             { tabulator2: tid },
           ],
         };
-    const rows = await ExamCommittee.find(filter).sort({ createdAt: -1 }).lean();
+
+    if (req.query.session !== undefined) {
+      if (!mongoose.isValidObjectId(req.query.session)) {
+        const err = new Error("Invalid session id");
+        err.status = 400;
+        return next(err);
+      }
+      filter.session = new mongoose.Types.ObjectId(req.query.session);
+    }
+
+    if (req.query.semester !== undefined) {
+      const semester = Number(req.query.semester);
+      if (!Number.isInteger(semester) || semester < 1 || semester > 10) {
+        const err = new Error("Invalid semester");
+        err.status = 400;
+        return next(err);
+      }
+      filter.semester = semester;
+    }
+
+    if (isChairman && (req.query.status === "active" || req.query.status === "inactive")) {
+      filter.status = req.query.status;
+    }
+
+    const rows = await ExamCommittee.find(filter)
+      .sort({ createdAt: -1 })
+      .populate("chairman member1 member2 tabulator1 tabulator2", "name email")
+      .populate("session", "session batch")
+      .lean();
     return res.json({ data: rows });
   } catch (err) {
     return next(err);
@@ -200,4 +235,212 @@ async function getCurrentChairman(req, res, next) {
   }
 }
 
-export { createCommittee, listCommittees, changeChairman, getCurrentChairman };
+const COMMITTEE_SLOTS = ["chairman", "member1", "member2", "tabulator1", "tabulator2"];
+
+function teacherIdOf(value) {
+  if (!value) return null;
+  return String(value._id || value);
+}
+
+async function isActiveChairman(teacherId) {
+  const doc = await DepartmentChairman.findOne({ teacher: teacherId, status: "active" })
+    .select("_id")
+    .lean();
+  return Boolean(doc);
+}
+
+// GET /api/committees/:id — chairman or any member of that committee.
+async function getCommittee(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      const err = new Error("Invalid id");
+      err.status = 400;
+      return next(err);
+    }
+
+    const doc = await ExamCommittee.findById(id)
+      .populate("chairman member1 member2 tabulator1 tabulator2", "name email")
+      .populate("session", "session batch")
+      .lean();
+    if (!doc) {
+      const err = new Error("Committee not found");
+      err.status = 404;
+      return next(err);
+    }
+
+    const tid = String(req.user.sub);
+    const isMember = COMMITTEE_SLOTS.some((slot) => teacherIdOf(doc[slot]) === tid);
+    const chairman = await isActiveChairman(new mongoose.Types.ObjectId(tid));
+    if (!isMember && !chairman) {
+      const err = new Error("Forbidden");
+      err.status = 403;
+      return next(err);
+    }
+
+    return res.json({ data: doc });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// PATCH /api/committees/:id — chairman only. Partial update, re-validated.
+async function updateCommittee(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      const err = new Error("Invalid id");
+      err.status = 400;
+      return next(err);
+    }
+
+    const doc = await ExamCommittee.findById(id);
+    if (!doc) {
+      const err = new Error("Committee not found");
+      err.status = 404;
+      return next(err);
+    }
+
+    const chairman = req.body.chairman ?? doc.chairman;
+    const member1 = req.body.member1 ?? doc.member1;
+    const member2 = req.body.member2 ?? doc.member2;
+    const tabulator1 = req.body.tabulator1 ?? doc.tabulator1;
+    const tabulator2 = req.body.tabulator2 ?? doc.tabulator2;
+    const session = req.body.session ?? doc.session;
+    const semester = req.body.semester ?? doc.semester;
+    const startDate = req.body.start ? new Date(req.body.start) : doc.start;
+    const endDate = req.body.end ? new Date(req.body.end) : doc.end;
+    const status = req.body.status ?? doc.status;
+
+    const ids = [chairman, member1, member2];
+    if (tabulator1) ids.push(tabulator1);
+    if (tabulator2) ids.push(tabulator2);
+    if (new Set(ids.map(String)).size !== ids.length) {
+      const err = new Error("Committee members must be distinct teachers");
+      err.status = 400;
+      return next(err);
+    }
+    await ensureActiveTeachers(ids);
+
+    if (!mongoose.isValidObjectId(session)) {
+      const err = new Error("Invalid session id");
+      err.status = 400;
+      return next(err);
+    }
+    const sessionDoc = await Session.findById(session).select("_id").lean();
+    if (!sessionDoc) {
+      const err = new Error("Session not found");
+      err.status = 404;
+      return next(err);
+    }
+
+    if (!(startDate < endDate)) {
+      const err = new Error("start must be before end");
+      err.status = 400;
+      return next(err);
+    }
+
+    if (status === "active") {
+      const overlap = await ExamCommittee.findOne({
+        _id: { $ne: doc._id },
+        session: new mongoose.Types.ObjectId(session),
+        semester,
+        status: "active",
+        start: { $lte: endOfDayInTZ(endDate) },
+        end: { $gte: startDate },
+      })
+        .select("_id")
+        .lean();
+      if (overlap) {
+        const err = new Error("Overlapping active committee for this session and semester");
+        err.status = 409;
+        return next(err);
+      }
+    }
+
+    doc.chairman = chairman;
+    doc.member1 = member1;
+    doc.member2 = member2;
+    doc.tabulator1 = tabulator1 || null;
+    doc.tabulator2 = tabulator2 || null;
+    doc.session = session;
+    doc.semester = semester;
+    doc.start = startDate;
+    doc.end = endDate;
+    doc.status = status;
+    if (req.body.external !== undefined) doc.external = req.body.external;
+
+    await doc.save();
+
+    await writeAudit({
+      actor: new mongoose.Types.ObjectId(req.user.sub),
+      actorType: req.user.type === "admin" ? "admin" : "teacher",
+      action: "committee.update",
+      entity: "ExamCommittee",
+      entityId: doc._id,
+      meta: { updated: Object.keys(req.body) },
+    });
+
+    await doc.populate([
+      { path: "chairman member1 member2 tabulator1 tabulator2", select: "name email" },
+      { path: "session", select: "session batch" },
+    ]);
+    return res.json({ data: doc });
+  } catch (err) {
+    if (err.code === 11000) {
+      err.status = 409;
+      err.message = "Duplicate key";
+    }
+    return next(err);
+  }
+}
+
+// DELETE /api/committees/:id — chairman only. Soft-deactivate, never delete.
+async function deactivateCommittee(req, res, next) {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      const err = new Error("Invalid id");
+      err.status = 400;
+      return next(err);
+    }
+
+    const doc = await ExamCommittee.findById(id);
+    if (!doc) {
+      const err = new Error("Committee not found");
+      err.status = 404;
+      return next(err);
+    }
+
+    if (doc.status !== "inactive") {
+      doc.status = "inactive";
+      await doc.save();
+      await writeAudit({
+        actor: new mongoose.Types.ObjectId(req.user.sub),
+        actorType: req.user.type === "admin" ? "admin" : "teacher",
+        action: "committee.deactivate",
+        entity: "ExamCommittee",
+        entityId: doc._id,
+        meta: { session: String(doc.session), semester: doc.semester },
+      });
+    }
+
+    await doc.populate([
+      { path: "chairman member1 member2 tabulator1 tabulator2", select: "name email" },
+      { path: "session", select: "session batch" },
+    ]);
+    return res.json({ data: doc });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export {
+  createCommittee,
+  listCommittees,
+  getCommittee,
+  updateCommittee,
+  deactivateCommittee,
+  changeChairman,
+  getCurrentChairman,
+};
