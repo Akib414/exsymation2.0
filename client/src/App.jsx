@@ -8,6 +8,7 @@ import Login from "./pages/Login.jsx";
 import AdminLogin from "./pages/AdminLogin.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
+import ChairmanDashboard from "./pages/ChairmanDashboard.jsx";
 import ChangePassword from "./pages/ChangePassword.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 
@@ -69,6 +70,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chairman"
+          element={
+            <ProtectedRoute roles={["chairman"]}>
+              <ChairmanDashboard />
             </ProtectedRoute>
           }
         />
