@@ -16,14 +16,21 @@ export default function OverviewPanel({ onNavigate }) {
   const [teachers, setTeachers] = useState(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [runningCommittees, setRunningCommittees] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setError("");
     (async () => {
       try {
-        const res = await api.get("/api/chairman/teachers");
-        if (!cancelled) setTeachers(res.data?.teachers || []);
+        const [teacherRes, committeeRes] = await Promise.all([
+          api.get("/api/chairman/teachers"),
+          api.get("/api/chairman/committees", { params: { state: "running" } }),
+        ]);
+        if (!cancelled) {
+          setTeachers(teacherRes.data?.teachers || []);
+          setRunningCommittees(committeeRes.data?.count ?? 0);
+        }
       } catch {
         if (!cancelled) setError("Could not load the teacher overview.");
       }
@@ -59,7 +66,7 @@ export default function OverviewPanel({ onNavigate }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Teachers"
           value={teachers === null ? "…" : list.length}
@@ -74,6 +81,11 @@ export default function OverviewPanel({ onNavigate }) {
           label="In committees"
           value={teachers === null ? "…" : inCommittees}
           hint="Teachers with active committee roles"
+        />
+        <StatCard
+          label="Running committees"
+          value={runningCommittees === null ? "…" : runningCommittees}
+          hint="Active inside their date window"
         />
       </div>
 
