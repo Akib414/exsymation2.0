@@ -82,7 +82,7 @@ export default function ChairmanDashboard() {
             ) : selected === "committees" ? (
               <CommitteesPanel />
             ) : (
-              <OverviewPanel onNavigate={setSelected} />
+              <OverviewPanel />
             )}
           </div>
         </main>

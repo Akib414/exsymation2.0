@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import api from "../../api/client.js";
 import CommitteeDetailDrawer from "./CommitteeDetailDrawer.jsx";
+import CreateCommitteeModal from "./CreateCommitteeModal.jsx";
 
 const STATE_FILTERS = [
   { value: "running", label: "Running" },
@@ -69,40 +70,38 @@ export default function CommitteesPanel() {
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const load = useCallback(async (signal) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.get("/api/chairman/committees", {
+        params: { state: state || undefined, q: query || undefined },
+        signal,
+      });
+      setCommittees(res.data?.committees || []);
+      setTotal(res.data?.total ?? (res.data?.committees || []).length);
+    } catch (err) {
+      if (err.code !== "ERR_CANCELED") {
+        setError("Could not load examination committees. Check your connection and try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [state, query]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
+  }, [load, attempt]);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(search.trim()), 250);
     return () => clearTimeout(timer);
   }, [search]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const res = await api.get("/api/chairman/committees", {
-          params: { state: state || undefined, q: query || undefined },
-          signal: controller.signal,
-        });
-        if (!cancelled) {
-          setCommittees(res.data?.committees || []);
-          setTotal(res.data?.total ?? (res.data?.committees || []).length);
-        }
-      } catch (err) {
-        if (!cancelled && err.code !== "ERR_CANCELED") {
-          setError("Could not load examination committees. Check your connection and try again.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [state, query, attempt]);
 
   const stats = useMemo(() => {
     const exams = committees.reduce((totalExams, committee) => totalExams + (committee.upcomingExamCount || 0), 0);
@@ -111,12 +110,34 @@ export default function CommitteesPanel() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Exam committees</h1>
-        <p className="mt-2 text-[15px] text-[#b9b9c2]">
-          Review committee composition, running status, and upcoming examinations.
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Exam committees</h1>
+          <p className="mt-2 text-[15px] text-[#b9b9c2]">
+            Review committee composition, running status, and upcoming examinations.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="rounded-xl bg-[#f2f2f4] px-5 py-3 text-sm font-semibold text-[#232329]"
+        >
+          + Create New Committee
+        </button>
       </div>
+
+      {notice ? (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-[#3f6b4a] bg-[#233d2b] px-4 py-3 text-sm text-[#9fe0b0]">
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice("")}
+            className="rounded-lg bg-[#9fe0b0] px-3 py-1.5 font-semibold text-[#233d2b]"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <SummaryChip value={committees.length} singular="committee" plural="committees" />
@@ -257,6 +278,19 @@ export default function CommitteesPanel() {
 
       {selected ? (
         <CommitteeDetailDrawer committee={selected} onClose={() => setSelected(null)} />
+      ) : null}
+
+      {creating ? (
+        <CreateCommitteeModal
+          onClose={() => setCreating(false)}
+          onCreated={async (created) => {
+            setCreating(false);
+            setNotice(
+              `Committee ${created?.identifier || "created"} was created successfully.`
+            );
+            setAttempt((value) => value + 1);
+          }}
+        />
       ) : null}
     </div>
   );

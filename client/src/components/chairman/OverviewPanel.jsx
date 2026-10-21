@@ -12,24 +12,31 @@ function StatCard({ label, value, hint }) {
   );
 }
 
-export default function OverviewPanel({ onNavigate }) {
+export default function OverviewPanel() {
   const [teachers, setTeachers] = useState(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [runningCommittees, setRunningCommittees] = useState(null);
+  const [upcomingExams, setUpcomingExams] = useState(null);
+  const [runningBatches, setRunningBatches] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setError("");
     (async () => {
       try {
-        const [teacherRes, committeeRes] = await Promise.all([
+        const [teacherRes, committeeRes, batchRes] = await Promise.all([
           api.get("/api/chairman/teachers"),
           api.get("/api/chairman/committees", { params: { state: "running" } }),
+          api.get("/api/chairman/batches"),
         ]);
         if (!cancelled) {
           setTeachers(teacherRes.data?.teachers || []);
           setRunningCommittees(committeeRes.data?.count ?? 0);
+          setUpcomingExams(committeeRes.data?.upcomingExamTotal ?? 0);
+          setRunningBatches(
+            (batchRes.data?.batches || []).filter((batch) => batch.status === "active").length
+          );
         }
       } catch {
         if (!cancelled) setError("Could not load the teacher overview.");
@@ -66,7 +73,7 @@ export default function OverviewPanel({ onNavigate }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Teachers"
           value={teachers === null ? "…" : list.length}
@@ -87,21 +94,17 @@ export default function OverviewPanel({ onNavigate }) {
           value={runningCommittees === null ? "…" : runningCommittees}
           hint="Active inside their date window"
         />
+        <StatCard
+          label="Running batches"
+          value={runningBatches === null ? "…" : runningBatches}
+          hint="Batches with an active status"
+        />
+        <StatCard
+          label="Upcoming examinations"
+          value={upcomingExams === null ? "…" : upcomingExams}
+          hint="Examination routines still to come"
+        />
       </div>
-
-      <section className="mt-6 rounded-2xl border border-[#45454e] bg-[#2e2e35] p-6">
-        <h2 className="text-lg font-bold">View all teachers</h2>
-        <p className="mt-1 text-[15px] text-[#b9b9c2]">
-          Inspect each teacher&apos;s course assignments and examination committee memberships.
-        </p>
-        <button
-          type="button"
-          onClick={() => onNavigate("teachers")}
-          className="mt-4 rounded-xl bg-[#f2f2f4] px-5 py-3 text-sm font-semibold text-[#232329]"
-        >
-          View all teachers
-        </button>
-      </section>
     </div>
   );
 }
