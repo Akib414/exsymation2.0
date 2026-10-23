@@ -1,261 +1,340 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import api from "../../api/client.js";
-import TeacherDetailDrawer from "./TeacherDetailDrawer.jsx";
+import {
+  Badge,
+  Card,
+  DetailRow,
+  Drawer,
+  EmptyNote,
+  ErrorBanner,
+  Section,
+  formatDate,
+  inputClass,
+  serverError,
+  statusTone,
+} from "./ui.jsx";
 
-const PAGE_SIZE = 10;
-
-function StatusBadge({ status }) {
-  const active = status === "active";
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        active ? "bg-[#233d2b] text-[#9fe0b0]" : "bg-[#3a2a2c] text-[#f0b3b9]"
-      }`}
-    >
-      {active ? "Active" : "Inactive"}
-    </span>
-  );
+function committeeRole(committee, teacherId) {
+  const id = String(teacherId);
+  if (String(committee.chairman) === id) return "Chairman";
+  if (String(committee.member1) === id) return "Member 1";
+  if (String(committee.member2) === id) return "Member 2";
+  if (String(committee.tabulator1) === id) return "Tabulator 1";
+  if (String(committee.tabulator2) === id) return "Tabulator 2";
+  return "Member";
 }
 
-function countLabel(count, singular, plural) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function SummaryChip({ value, singular, plural }) {
-  return (
-    <span className="rounded-full border border-[#45454e] bg-[#34333c] px-3 py-1 text-xs text-[#d7d7dd]">
-      {countLabel(value, singular, plural)}
-    </span>
-  );
+function assignmentRole(assignment, teacherId) {
+  const id = String(teacherId);
+  if ((assignment.firstExaminers || []).some((value) => String(value) === id)) {
+    return "First examiner";
+  }
+  if (String(assignment.secondExaminer) === id) return "Second examiner";
+  if (assignment.thirdExaminer?.teacher && String(assignment.thirdExaminer.teacher) === id) {
+    return "Third examiner";
+  }
+  return "Examiner";
 }
 
 export default function TeachersPanel() {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
-  const [attempt, setAttempt] = useState(0);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    const controller = new AbortController();
     let cancelled = false;
     const timer = setTimeout(async () => {
       setLoading(true);
       setError("");
       try {
-        const res = await api.get("/api/chairman/teachers", {
-          params: {
-            q: search.trim() || undefined,
-            status: status || undefined,
-          },
-          signal: controller.signal,
-        });
-        if (!cancelled) {
-          setTeachers(res.data?.teachers || []);
-          setPage(1);
-        }
+        const params = {};
+        if (status) params.status = status;
+        if (query.trim()) params.q = query.trim();
+        const { data } = await api.get("/api/chairman/teachers", { params });
+        if (!cancelled) setTeachers(data.teachers || []);
       } catch (err) {
-        if (!cancelled && err.code !== "ERR_CANCELED") {
-          setError("Could not load teachers. Check your connection and try again.");
-        }
+        if (!cancelled) setError(serverError(err, "Failed to load teachers"));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }, 250);
-
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      controller.abort();
     };
-  }, [search, status, attempt]);
+  }, [query, status]);
 
-  const stats = useMemo(() => {
-    const active = teachers.filter((teacher) => teacher.status === "active").length;
-    const inCommittees = teachers.filter((teacher) => teacher.committeeCount > 0).length;
-    return { active, inCommittees };
-  }, [teachers]);
+  async function openTeacher(teacher) {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setSelected(teacher);
+    setDetail(null);
+    setDetailError("");
+    setDetailLoading(true);
+    try {
+      const { data } = await api.get(`/api/chairman/teachers/${teacher.id}`);
+      if (requestRef.current === requestId) setDetail(data.data);
+    } catch (err) {
+      if (requestRef.current === requestId) {
+        setDetailError(serverError(err, "Failed to load teacher details"));
+      }
+    } finally {
+      if (requestRef.current === requestId) setDetailLoading(false);
+    }
+  }
 
-  const totalPages = Math.max(1, Math.ceil(teachers.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const visible = teachers.slice(pageStart, pageStart + PAGE_SIZE);
-  const rangeStart = teachers.length === 0 ? 0 : pageStart + 1;
-  const rangeEnd = Math.min(pageStart + PAGE_SIZE, teachers.length);
+  function closeDetail() {
+    requestRef.current += 1;
+    setSelected(null);
+    setDetail(null);
+    setDetailError("");
+    setDetailLoading(false);
+  }
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Teachers</h1>
-        <p className="mt-2 text-[15px] text-[#b9b9c2]">
-          Review teaching staff, their course assignments, and examination committee roles.
-        </p>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <SummaryChip value={teachers.length} singular="teacher" plural="teachers" />
-        <SummaryChip value={stats.active} singular="active teacher" plural="active teachers" />
-        <SummaryChip value={stats.inCommittees} singular="in committee" plural="in committees" />
-      </div>
-
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        <div className="flex-1">
-          <label htmlFor="teacher-search" className="sr-only">
-            Search teachers
-          </label>
-          <input
-            id="teacher-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by name or email"
-            className="w-full rounded-xl border border-[#55555f] bg-[#2e2e35] px-4 py-3 text-[15px] text-[#f2f2f4] placeholder:text-[#8f8f9b]"
-          />
-        </div>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <label htmlFor="teacher-status" className="sr-only">
-            Filter by status
-          </label>
-          <select
-            id="teacher-status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            className="w-full rounded-xl border border-[#55555f] bg-[#2e2e35] px-4 py-3 text-[15px] text-[#f2f2f4] sm:w-48"
-          >
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          <h1 className="text-2xl font-bold">Teachers</h1>
+          <p className="mt-1 text-[15px] text-[#b9b9c2]">
+            Review teaching staff, current committee work, and examination duties.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="w-full sm:w-64">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name or email"
+              className={inputClass}
+              aria-label="Search teachers"
+            />
+          </div>
+          <div className="w-full sm:w-40">
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className={inputClass}
+              aria-label="Filter by status"
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {error ? (
-        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-[#7a3b40] bg-[#3a2a2c] px-4 py-3 text-sm text-[#ffd9dc]">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-            className="rounded-lg bg-[#ffd9dc] px-3 py-1.5 font-semibold text-[#3a2a2c]"
-          >
-            Retry
-          </button>
-        </div>
-      ) : null}
+      <ErrorBanner>{error}</ErrorBanner>
 
-      <section
-        className="overflow-hidden rounded-2xl border border-[#45454e] bg-[#2e2e35]"
-        aria-busy={loading}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="bg-[#34333c] text-xs uppercase tracking-wide text-[#b9b9c2]">
-              <tr>
-                <th scope="col" className="px-4 py-3 font-semibold">Teacher</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Department</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Current responsibilities</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Status</th>
-                <th scope="col" className="px-4 py-3 text-right font-semibold">Details</th>
+      {loading ? (
+        <EmptyNote>Loading teachers…</EmptyNote>
+      ) : teachers.length === 0 ? (
+        <EmptyNote>No teachers match the current filters.</EmptyNote>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-[#45454e]">
+          <table className="w-full text-left text-[15px]">
+            <thead>
+              <tr className="border-b border-[#45454e] bg-[#2e2e35] text-sm text-[#b9b9c2]">
+                <th className="px-5 py-3 font-semibold">TEACHER</th>
+                <th className="px-5 py-3 font-semibold">PHONE</th>
+                <th className="px-5 py-3 font-semibold">STATUS</th>
+                <th className="px-5 py-3 font-semibold">CURRENT ACTIVITY</th>
+                <th className="px-5 py-3 font-semibold" />
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-[#b9b9c2]">
-                    Loading teachers…
+              {teachers.map((teacher) => (
+                <tr key={teacher.id} className="border-b border-[#45454e] last:border-0">
+                  <td className="px-5 py-3 align-top">
+                    <button
+                      type="button"
+                      onClick={() => openTeacher(teacher)}
+                      className="text-left font-semibold underline-offset-4 hover:underline"
+                    >
+                      {teacher.name}
+                    </button>
+                    <p className="text-xs text-[#8f8f9a]">{teacher.email}</p>
+                    {teacher.isChairman && (
+                      <div className="mt-1">
+                        <Badge tone="info">Chairman</Badge>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 align-top text-[#b9b9c2]">{teacher.phone || "—"}</td>
+                  <td className="px-5 py-3 align-top">
+                    <Badge tone={statusTone(teacher.status)}>{teacher.status}</Badge>
+                  </td>
+                  <td className="px-5 py-3 align-top">
+                    <div className="flex flex-wrap gap-1">
+                      {teacher.committeeCount > 0 && (
+                        <Badge>Committee ×{teacher.committeeCount}</Badge>
+                      )}
+                      {teacher.assignmentCount > 0 && (
+                        <Badge>Examiner ×{teacher.assignmentCount}</Badge>
+                      )}
+                      {teacher.invigilationCount > 0 && (
+                        <Badge>Invigilator ×{teacher.invigilationCount}</Badge>
+                      )}
+                      {teacher.committeeCount === 0 &&
+                        teacher.assignmentCount === 0 &&
+                        teacher.invigilationCount === 0 && (
+                          <span className="text-sm text-[#8f8f9a]">No current duties</span>
+                        )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 align-top text-right">
+                    <button
+                      type="button"
+                      onClick={() => openTeacher(teacher)}
+                      className="rounded-xl border border-[#55555f] px-4 py-2 text-sm font-semibold"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
-              ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-[#b9b9c2]">
-                    No teachers match your search and filters.
-                  </td>
-                </tr>
-              ) : (
-                visible.map((teacher) => (
-                  <tr key={teacher.id} className="border-t border-[#45454e] align-top">
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold">{teacher.name}</span>
-                        {teacher.isChairman ? (
-                          <span className="rounded-full bg-[#34333c] px-2 py-0.5 text-xs font-semibold text-[#d7d7dd]">
-                            Chairman
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-[#b9b9c2]">Not recorded</td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2 text-xs text-[#d7d7dd]">
-                        <span>
-                          {countLabel(teacher.assignmentCount, "course assignment", "course assignments")}
-                        </span>
-                        <span>{countLabel(teacher.committeeCount, "committee", "committees")}</span>
-                        {teacher.invigilationCount > 0 ? (
-                          <span>
-                            {countLabel(teacher.invigilationCount, "invigilation duty", "invigilation duties")}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <StatusBadge status={teacher.status} />
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelected(teacher)}
-                        className="rounded-xl border border-[#55555f] px-3 py-2 text-sm font-semibold text-[#f2f2f4]"
-                      >
-                        + View details
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#45454e] px-4 py-3 text-sm text-[#b9b9c2]">
-          <span>
-            Showing {rangeStart}–{rangeEnd} of {teachers.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-              disabled={safePage <= 1 || loading}
-              className="rounded-lg border border-[#55555f] px-3 py-1.5 font-semibold text-[#f2f2f4] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <span>
-              Page {safePage} of {totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-              disabled={safePage >= totalPages || loading}
-              className="rounded-lg border border-[#55555f] px-3 py-1.5 font-semibold text-[#f2f2f4] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </section>
+      {selected && (
+        <Drawer
+          title={selected.name}
+          subtitle={selected.email}
+          onClose={closeDetail}
+        >
+          {detailLoading && <EmptyNote>Loading teacher details…</EmptyNote>}
+          <ErrorBanner>{detailError}</ErrorBanner>
+          {detail && (
+            <>
+              <div className="mb-5 flex flex-wrap gap-2">
+                <Badge tone={statusTone(detail.teacher.status)}>{detail.teacher.status}</Badge>
+                {detail.teacher.mustChangePassword && (
+                  <Badge tone="info">Password change pending</Badge>
+                )}
+                {detail.roles.map((role) => (
+                  <Badge key={role}>{role}</Badge>
+                ))}
+              </div>
 
-      <p className="mt-3 text-xs text-[#8f8f9b]">
-        Department, designation, and employee ID are not stored in the current teacher records.
-        Personal contact details are intentionally hidden.
-      </p>
+              <Section title="Contact">
+                <DetailRow label="Email" value={detail.teacher.email} />
+                <DetailRow label="Phone" value={detail.teacher.phone || "—"} />
+                <DetailRow label="Joined" value={formatDate(detail.teacher.createdAt)} />
+              </Section>
 
-      {selected ? (
-        <TeacherDetailDrawer teacher={selected} onClose={() => setSelected(null)} />
-      ) : null}
+              {detail.chairmanTerms.length > 0 && (
+                <Section title="Chairman terms" count={detail.chairmanTerms.length}>
+                  <div className="flex flex-col gap-2">
+                    {detail.chairmanTerms.map((term) => (
+                      <Card key={term.id} className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {formatDate(term.startDate)} –{" "}
+                            {term.endDate ? formatDate(term.endDate) : "present"}
+                          </p>
+                        </div>
+                        <Badge tone={statusTone(term.status)}>{term.status}</Badge>
+                      </Card>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              <Section title="Committees" count={detail.committees.length}>
+                {detail.committees.length === 0 ? (
+                  <EmptyNote>No committee memberships.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.committees.map((committee) => (
+                      <Card key={committee._id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {committee.session?.session || "Session"} ·{" "}
+                              {committee.session?.batch || "Batch"} · Semester{" "}
+                              {committee.semester}
+                            </p>
+                            <p className="text-xs text-[#8f8f9a]">
+                              {formatDate(committee.start)} – {formatDate(committee.end)}
+                            </p>
+                          </div>
+                          <Badge>{committeeRole(committee, detail.teacher.id)}</Badge>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Course assignments" count={detail.assignments.length}>
+                {detail.assignments.length === 0 ? (
+                  <EmptyNote>No examiner assignments.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.assignments.map((assignment) => (
+                      <Card key={assignment._id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {assignment.course?.course_code || "Course"} —{" "}
+                              {assignment.course?.course_name || ""}
+                            </p>
+                            <p className="text-xs text-[#8f8f9a]">
+                              {assignment.session?.session || "Session"} · Semester{" "}
+                              {assignment.semester}
+                            </p>
+                          </div>
+                          <Badge>{assignmentRole(assignment, detail.teacher.id)}</Badge>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Invigilation duties" count={detail.duties.length}>
+                {detail.duties.length === 0 ? (
+                  <EmptyNote>No invigilation duties.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.duties.map((duty) => (
+                      <Card key={duty._id}>
+                        <p className="text-sm font-semibold">
+                          {duty.course?.course_code || "Course"} —{" "}
+                          {duty.course?.course_name || ""}
+                        </p>
+                        <p className="text-xs text-[#8f8f9a]">
+                          {formatDate(duty.date)} · {duty.time} ·{" "}
+                          {duty.session?.session || "Session"}
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            </>
+          )}
+        </Drawer>
+      )}
+
+      {!loading && teachers.length > 0 && (
+        <p className="mt-3 text-xs text-[#8f8f9a]">
+          Showing {teachers.length} {teachers.length === 1 ? "teacher" : "teachers"}. Private
+          identifiers are not shown.
+        </p>
+      )}
     </div>
   );
 }

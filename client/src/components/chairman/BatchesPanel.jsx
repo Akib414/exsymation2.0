@@ -1,72 +1,83 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import api from "../../api/client.js";
-import BatchDetailDrawer from "./BatchDetailDrawer.jsx";
+import {
+  Badge,
+  Card,
+  DetailRow,
+  Drawer,
+  EmptyNote,
+  ErrorBanner,
+  Section,
+  formatDate,
+  inputClass,
+  serverError,
+  statusTone,
+} from "./ui.jsx";
 
-function StatusBadge({ status }) {
-  const active = status === "active";
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        active ? "bg-[#233d2b] text-[#9fe0b0]" : "bg-[#3a2a2c] text-[#f0b3b9]"
-      }`}
-    >
-      {active ? "Active" : "Inactive"}
-    </span>
-  );
-}
-
-function countLabel(count, singular, plural) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function SummaryChip({ value, singular, plural }) {
-  return (
-    <span className="rounded-full border border-[#45454e] bg-[#34333c] px-3 py-1 text-xs text-[#d7d7dd]">
-      {countLabel(value, singular, plural)}
-    </span>
-  );
+function personName(person) {
+  return person?.name || "—";
 }
 
 export default function BatchesPanel() {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("active");
-  const [attempt, setAttempt] = useState(0);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    const controller = new AbortController();
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError("");
       try {
-        const res = await api.get("/api/chairman/batches", { signal: controller.signal });
-        if (!cancelled) setBatches(res.data?.batches || []);
+        const { data } = await api.get("/api/chairman/batches");
+        if (!cancelled) setBatches(data.batches || []);
       } catch (err) {
-        if (!cancelled && err.code !== "ERR_CANCELED") {
-          setError("Could not load batches. Check your connection and try again.");
-        }
+        if (!cancelled) setError(serverError(err, "Failed to load batches"));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
-      controller.abort();
     };
-  }, [attempt]);
+  }, []);
 
-  const stats = useMemo(() => {
-    const running = batches.filter((batch) => batch.status === "active");
-    const students = running.reduce((total, batch) => total + (batch.student_number || 0), 0);
-    return { running: running.length, students };
-  }, [batches]);
+  async function openBatch(batch) {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setSelected(batch);
+    setDetail(null);
+    setDetailError("");
+    setDetailLoading(true);
+    try {
+      const { data } = await api.get(`/api/chairman/batches/${batch.id}`);
+      if (requestRef.current === requestId) setDetail(data.data);
+    } catch (err) {
+      if (requestRef.current === requestId) {
+        setDetailError(serverError(err, "Failed to load batch details"));
+      }
+    } finally {
+      if (requestRef.current === requestId) setDetailLoading(false);
+    }
+  }
 
-  const needle = search.trim().toLowerCase();
+  function closeDetail() {
+    requestRef.current += 1;
+    setSelected(null);
+    setDetail(null);
+    setDetailError("");
+    setDetailLoading(false);
+  }
+
+  const needle = query.trim().toLowerCase();
   const visible = batches.filter((batch) => {
     if (status && batch.status !== status) return false;
     if (!needle) return true;
@@ -75,134 +86,260 @@ export default function BatchesPanel() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Batches</h1>
-        <p className="mt-2 text-[15px] text-[#b9b9c2]">
-          Monitor running batches, their course allocations, and academic progress.
-        </p>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <SummaryChip value={stats.running} singular="running batch" plural="running batches" />
-        <SummaryChip value={stats.students} singular="recorded student" plural="recorded students" />
-      </div>
-
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        <div className="flex-1">
-          <label htmlFor="batch-search" className="sr-only">
-            Search batches
-          </label>
-          <input
-            id="batch-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search session or batch"
-            className="w-full rounded-xl border border-[#55555f] bg-[#2e2e35] px-4 py-3 text-[15px] text-[#f2f2f4] placeholder:text-[#8f8f9b]"
-          />
-        </div>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <label htmlFor="batch-status" className="sr-only">
-            Filter by batch status
-          </label>
-          <select
-            id="batch-status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            className="w-full rounded-xl border border-[#55555f] bg-[#2e2e35] px-4 py-3 text-[15px] text-[#f2f2f4] sm:w-52"
-          >
-            <option value="active">Running (active)</option>
-            <option value="inactive">Inactive / completed</option>
-            <option value="">All batches</option>
-          </select>
+          <h1 className="text-2xl font-bold">Batches</h1>
+          <p className="mt-1 text-[15px] text-[#b9b9c2]">
+            Review running batches, semester courses, examiner assignments, and routines.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="w-full sm:w-64">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search session or batch"
+              className={inputClass}
+              aria-label="Search batches"
+            />
+          </div>
+          <div className="w-full sm:w-40">
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className={inputClass}
+              aria-label="Filter by status"
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {error ? (
-        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-[#7a3b40] bg-[#3a2a2c] px-4 py-3 text-sm text-[#ffd9dc]">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-            className="rounded-lg bg-[#ffd9dc] px-3 py-1.5 font-semibold text-[#3a2a2c]"
-          >
-            Retry
-          </button>
-        </div>
-      ) : null}
+      <ErrorBanner>{error}</ErrorBanner>
 
-      <section
-        className="overflow-hidden rounded-2xl border border-[#45454e] bg-[#2e2e35]"
-        aria-busy={loading}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="bg-[#34333c] text-xs uppercase tracking-wide text-[#b9b9c2]">
-              <tr>
-                <th scope="col" className="px-4 py-3 font-semibold">Batch</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Department</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Current semester</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Students</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Status</th>
-                <th scope="col" className="px-4 py-3 text-right font-semibold">Details</th>
+      {loading ? (
+        <EmptyNote>Loading batches…</EmptyNote>
+      ) : visible.length === 0 ? (
+        <EmptyNote>No batches match the current filters.</EmptyNote>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-[#45454e]">
+          <table className="w-full text-left text-[15px]">
+            <thead>
+              <tr className="border-b border-[#45454e] bg-[#2e2e35] text-sm text-[#b9b9c2]">
+                <th className="px-5 py-3 font-semibold">SESSION</th>
+                <th className="px-5 py-3 font-semibold">BATCH</th>
+                <th className="px-5 py-3 font-semibold">SEMESTER</th>
+                <th className="px-5 py-3 font-semibold">STUDENTS</th>
+                <th className="px-5 py-3 font-semibold">STATUS</th>
+                <th className="px-5 py-3 font-semibold">ACTIVITY</th>
+                <th className="px-5 py-3 font-semibold" />
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-[#b9b9c2]">
-                    Loading batches…
+              {visible.map((batch) => (
+                <tr key={batch.id} className="border-b border-[#45454e] last:border-0">
+                  <td className="px-5 py-3 font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => openBatch(batch)}
+                      className="text-left underline-offset-4 hover:underline"
+                    >
+                      {batch.session}
+                    </button>
+                  </td>
+                  <td className="px-5 py-3">{batch.batch}</td>
+                  <td className="px-5 py-3 text-[#b9b9c2]">{batch.current_semester}</td>
+                  <td className="px-5 py-3">{batch.student_number}</td>
+                  <td className="px-5 py-3">
+                    <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      <Badge>Assignments {batch.assignments}</Badge>
+                      <Badge>Routines {batch.routines}</Badge>
+                      <Badge>Committees {batch.committees}</Badge>
+                      {batch.active_committee_semesters.length > 0 && (
+                        <Badge tone="info">
+                          Active committee: sem {batch.active_committee_semesters.join(", ")}
+                        </Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openBatch(batch)}
+                      className="rounded-xl border border-[#55555f] px-4 py-2 text-sm font-semibold"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
-              ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-[#b9b9c2]">
-                    No batches match your search and filters.
-                  </td>
-                </tr>
-              ) : (
-                visible.map((batch) => (
-                  <tr key={batch.id} className="border-t border-[#45454e] align-top">
-                    <td className="px-4 py-4">
-                      <p className="font-semibold">{batch.batch}</p>
-                      <p className="text-xs text-[#b9b9c2]">{batch.session}</p>
-                    </td>
-                    <td className="px-4 py-4 text-[#b9b9c2]">Not recorded</td>
-                    <td className="px-4 py-4 text-[#b9b9c2]">Semester {batch.current_semester}</td>
-                    <td className="px-4 py-4">{batch.student_number}</td>
-                    <td className="px-4 py-4">
-                      <StatusBadge status={batch.status} />
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelected(batch)}
-                        className="rounded-xl border border-[#55555f] px-3 py-2 text-sm font-semibold text-[#f2f2f4]"
-                      >
-                        + View details
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
+      )}
 
-        <div className="border-t border-[#45454e] px-4 py-3 text-sm text-[#b9b9c2]">
-          Showing {visible.length} of {batches.length}{" "}
-          {batches.length === 1 ? "batch" : "batches"}
-        </div>
-      </section>
+      {selected && (
+        <Drawer
+          title={`${selected.session} · ${selected.batch}`}
+          subtitle={`Current semester ${selected.current_semester}`}
+          onClose={closeDetail}
+        >
+          {detailLoading && <EmptyNote>Loading batch details…</EmptyNote>}
+          <ErrorBanner>{detailError}</ErrorBanner>
+          {detail && (
+            <>
+              <div className="mb-5 flex flex-wrap gap-2">
+                <Badge tone={statusTone(detail.batch.status)}>{detail.batch.status}</Badge>
+                <Badge>{detail.batch.student_number} students</Badge>
+                <Badge>Semester {detail.batch.current_semester}</Badge>
+              </div>
 
-      <p className="mt-3 text-xs text-[#8f8f9b]">
-        Running batches are shown by default. Department and program are not stored in the current
-        batch records; student figures are the recorded batch enrollment.
-      </p>
+              <Section title="Batch information">
+                <DetailRow label="Session" value={detail.batch.session} />
+                <DetailRow label="Batch" value={detail.batch.batch} />
+                <DetailRow label="Current semester" value={detail.batch.current_semester} />
+                <DetailRow label="Students" value={detail.batch.student_number} />
+                <DetailRow label="Created" value={formatDate(detail.batch.createdAt)} />
+              </Section>
 
-      {selected ? (
-        <BatchDetailDrawer batch={selected} onClose={() => setSelected(null)} />
-      ) : null}
+              <Section title="Courses this semester" count={detail.courses.length}>
+                {detail.courses.length === 0 ? (
+                  <EmptyNote>No courses are mapped to this semester.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.courses.map((course) => (
+                      <Card key={course.id} className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">
+                            {course.course_code} — {course.course_name}
+                          </p>
+                          <p className="text-xs text-[#8f8f9a]">
+                            {course.course_type} · {course.course_credit} credits
+                          </p>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Course assignments" count={detail.assignments.length}>
+                {detail.assignments.length === 0 ? (
+                  <EmptyNote>No examiner assignments for this semester.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.assignments.map((assignment) => (
+                      <Card key={assignment._id}>
+                        <p className="text-sm font-semibold">
+                          {assignment.course?.course_code || "Course"} —{" "}
+                          {assignment.course?.course_name || ""}
+                        </p>
+                        <dl className="mt-2 grid gap-1 text-xs text-[#b9b9c2]">
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 font-semibold">First examiner(s):</dt>
+                            <dd>
+                              {(assignment.firstExaminers || []).map(personName).join(", ") || "—"}
+                            </dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 font-semibold">Second examiner:</dt>
+                            <dd>{personName(assignment.secondExaminer)}</dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 font-semibold">Third examiner:</dt>
+                            <dd>
+                              {personName(assignment.thirdExaminer?.teacher)}
+                              {assignment.thirdExaminer?.studentCount != null
+                                ? ` (${assignment.thirdExaminer.studentCount} students)`
+                                : ""}
+                            </dd>
+                          </div>
+                        </dl>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Routines" count={detail.routines.length}>
+                {detail.routines.length === 0 ? (
+                  <EmptyNote>No routines for this semester.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.routines.map((routine) => (
+                      <Card key={routine._id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-semibold">
+                            {routine.course?.course_code || "Course"} —{" "}
+                            {routine.course?.course_name || ""}
+                          </p>
+                          <p className="shrink-0 text-xs text-[#8f8f9a]">
+                            {formatDate(routine.date)} · {routine.time}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs text-[#b9b9c2]">
+                          Invigilators:{" "}
+                          {(routine.invigilators || []).map(personName).join(", ") || "—"}
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Examination committees" count={detail.committees.length}>
+                {detail.committees.length === 0 ? (
+                  <EmptyNote>No committees for this batch.</EmptyNote>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {detail.committees.map((committee) => (
+                      <Card key={committee._id}>
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">Semester {committee.semester}</p>
+                            <p className="text-xs text-[#8f8f9a]">
+                              {formatDate(committee.start)} – {formatDate(committee.end)}
+                            </p>
+                          </div>
+                          <Badge tone={statusTone(committee.status)}>{committee.status}</Badge>
+                        </div>
+                        <p className="text-xs text-[#b9b9c2]">
+                          Chairman: {personName(committee.chairman)} · Members:{" "}
+                          {personName(committee.member1)}, {personName(committee.member2)}
+                        </p>
+                        {(committee.tabulator1 || committee.tabulator2) && (
+                          <p className="text-xs text-[#b9b9c2]">
+                            Tabulators:{" "}
+                            {[committee.tabulator1, committee.tabulator2]
+                              .filter(Boolean)
+                              .map(personName)
+                              .join(", ")}
+                          </p>
+                        )}
+                        {committee.external?.name && (
+                          <p className="text-xs text-[#b9b9c2]">
+                            External: {committee.external.name}
+                            {committee.external.institution
+                              ? ` (${committee.external.institution})`
+                              : ""}
+                          </p>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            </>
+          )}
+        </Drawer>
+      )}
     </div>
   );
 }

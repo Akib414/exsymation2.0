@@ -1,10 +1,10 @@
 import { useState } from "react";
 
 import { useAuth } from "../auth/AuthContext.jsx";
-import OverviewPanel from "../components/chairman/OverviewPanel.jsx";
 import TeachersPanel from "../components/chairman/TeachersPanel.jsx";
 import BatchesPanel from "../components/chairman/BatchesPanel.jsx";
 import CommitteesPanel from "../components/chairman/CommitteesPanel.jsx";
+import OverviewPanel from "../components/chairman/OverviewPanel.jsx";
 
 const NAV = [
   { key: "overview", label: "Overview" },
@@ -14,7 +14,7 @@ const NAV = [
 ];
 
 const TITLES = {
-  overview: "Chairman overview",
+  overview: "Chairman dashboard",
   teachers: "Teachers",
   batches: "Batches",
   committees: "Exam committees",
@@ -31,10 +31,7 @@ export default function ChairmanDashboard() {
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#f2f2f4] text-base font-extrabold text-[#232329]">
             E
           </span>
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-bold leading-tight">Exsymation</p>
-            <p className="text-xs text-[#b9b9c2]">Chairman</p>
-          </div>
+          <span className="text-[15px] font-bold">Exsymation · Chairman</span>
         </div>
         <nav className="flex flex-col gap-1">
           {NAV.map((item) => (
@@ -82,7 +79,7 @@ export default function ChairmanDashboard() {
             ) : selected === "committees" ? (
               <CommitteesPanel />
             ) : (
-              <OverviewPanel />
+              <OverviewPanel onNavigate={setSelected} />
             )}
           </div>
         </main>
